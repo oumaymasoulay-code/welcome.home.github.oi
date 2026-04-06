@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Room Feed - Social Rooms</title>
+  <link rel="stylesheet" href="/client/style.css">
+</head>
+<body>
+  <div class="cursor" id="cursor"></div>
+  
+  <div class="container">
+    <header>
+      <div class="logo" onclick="history.back()">Rooms</div>
+      <h1 id="room-title" style="color: var(--glow-blue);">Loading...</h1>
+      <button class="btn" onclick="logout()">Logout</button>
+    </header>
+
+    <div class="posts" id="posts-list"></div>
+
+    <div class="card" style="margin-top: 30px;">
+      <h3>Create Post</h3>
+      <form id="post-form" enctype="multipart/form-data">
+        <div class="form-group">
+          <textarea id="post-content" placeholder="What's happening in the room?" rows="3"></textarea>
+        </div>
+        <div class="form-group">
+          <input type="file" id="post-media" accept="image/*,video/*">
+        </div>
+        <button type="submit" class="btn" style="width: 100%;">Post</button>
+      </form>
+    </div>
+  </div>
+
+  <script src="/socket.io/socket.io.js"></script>
+  <script src="/client/app.js"></script>
+  <script>
+    const urlParams = new URLSearchParams(window.location.search);
+    const roomId = urlParams.get('room');
+    const token = localStorage.getItem('token');
+    let roomSocket;
+
+    if (!roomId || !token) {
+      alert('Invalid room or not logged in');
+      history.back();
+    }
+
+    const socket = io();
+    socket.emit('join_room', roomId);
+    roomSocket = socket;
+
+    // Load posts
+    async function loadPosts() {
+      const res = await fetch(`/api/rooms/${roomId}/posts`, {
+        headers: {'Authorization': `Bearer ${token}`}
+      });
+      if (res.ok) {
+        const posts = await res.json();
+        displayPosts(posts);
+      }
+    }
+
+    function displayPosts(posts) {
+      const container = document.getElementById('posts-list');
+      container.innerHTML = posts.map(p => `
+        <div class="post card">
+          <strong>${p.email}</strong> <small>${new Date(p.created_at).toLocaleString()}</small>
+          <p>${p.content || ''}</p>
+          ${p.media_url ? `<${p.media_type === 'video' ? 'video' : 'img'} src="${p.media_url}" class="post-media" controls="${p.media_type === 'video' ? 'controls' : ''}">` : ''}
+          <div class="post-actions">
+            <button class="btn" style="padding: 5px 10px; font-size: 0.8rem;">Like</button>
+            <button class="btn" style="padding: 5px 10px; font-size: 0.8rem;">Comment</button>
+          </div>
+        </div>
+      `).reverse().join('');
+    }
+
+    // Post form
+    document.getElementById('post-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const formData = new FormData();
+      formData.append('content', document.getElementById('post-content').value);
+      const file = document.getElementById('post-media').files[0];
+      if (file) formData.append('media', file);
+
+      const res = await fetch(`/api/rooms/${roomId}/posts`, {
+        method: 'POST',
+        headers: {'Authorization': `Bearer ${token}`},
+        body: formData
+      });
+      if (res.ok) {
+        document.getElementById('post-form').reset();
+        loadPosts(); // Reload
+      }
+    });
+
+    // Socket new post
+    roomSocket.on('new_post', (post) => {
+      loadPosts(); // Refresh on new post
+    });
+
+    // Load room title (add API later), cursor
+    document.getElementById('room-title').textContent = `Room #${roomId}`;
+    document.addEventListener('mousemove', (e) => {
+      document.getElementById('cursor').style.left = e.clientX + 'px';
+      document.getElementById('cursor').style.top = e.clientY + 'px';
+    });
+
+    loadPosts();
+
+    function logout() {
+      localStorage.removeItem('token');
+      history.back();
+    }
+  </script>
+</body>
+</html>
